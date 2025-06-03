@@ -1,2 +1,2 @@
 # wsh
-a shell written in rust
+A modern, fast, and safe shell written in Rust.
