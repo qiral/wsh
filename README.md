@@ -1,42 +1,42 @@
-# WSH (Web Shell) 🚀
+# WSH
 
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg?style=for-the-badge)]()
 
-> **⚠️ PROTOTYPE STATUS**: WSH is currently in early development prototype phase. Features and APIs may change significantly.
+> **⚠PROTOTYPE STATUS**: WSH is currently in early development prototype phase. Features and APIs may change significantly.
 
 A modern, fast, and extensible terminal emulator/shell written in Rust. WSH aims to provide a powerful command-line experience with modern features while maintaining excellent performance and memory safety.
 
-## 🌟 Features
+##  Features
 
-### ✅ Currently Available (Prototype v0.1.0)
+###  Currently Available (Prototype v0.1.0)
 
-- **🔄 Interactive Shell**: Full interactive terminal with command execution
-- **📝 Command History**: Navigate through command history with arrow keys
-- **🎨 Syntax Highlighting**: Colored output and error messages
-- **⚙️ Configuration System**: TOML-based configuration with customizable settings
-- **🔗 Command Aliases**: Create custom shortcuts for frequently used commands
-- **📁 Built-in Commands**: Essential commands like `cd`, `pwd`, `help`, `history`, `alias`, `exit`
-- **🎯 Smart Parsing**: Advanced command line parsing with quote handling
-- **🏠 Path Expansion**: Automatic tilde (`~`) expansion to home directory
-- **⌨️ Rich Keyboard Support**: Arrow keys, Home/End, Ctrl+C/D shortcuts
-- **📊 Cross-platform**: Works on Linux, macOS, and Windows
+- **Interactive Shell**: Full interactive terminal with command execution
+- **Command History**: Navigate through command history with arrow keys
+- **Syntax Highlighting**: Colored output and error messages
+- **Configuration System**: TOML-based configuration with customizable settings
+- **Command Aliases**: Create custom shortcuts for frequently used commands
+- **Built-in Commands**: Essential commands like `cd`, `pwd`, `help`, `history`, `alias`, `exit`
+- **Smart Parsing**: Advanced command line parsing with quote handling
+- **Path Expansion**: Automatic tilde (`~`) expansion to home directory
+- **Rich Keyboard Support**: Arrow keys, Home/End, Ctrl+C/D shortcuts
+- **Cross-platform**: Works on Linux, macOS, and Windows
 
-### 🚧 Planned Features (Future Releases)
+###  Planned Features (Future Releases)
 
-- **🔀 Piping & Redirection**: `command1 | command2`, `output > file.txt`
-- **💼 Job Control**: Background processes, job management
-- **🌐 Environment Variables**: Full environment variable support
-- **📜 Scripting**: WSH script execution with `.wsh` files
-- **🔌 Plugin System**: Extensible architecture for custom plugins
-- **🎭 Themes**: Multiple color themes and customizable UI
-- **📡 Remote Features**: SSH integration, remote command execution
-- **🔍 Smart Completion**: Tab completion for commands and paths
-- **🐛 Debugging Tools**: Built-in debugging and profiling capabilities
-- **📈 Performance Monitoring**: Real-time performance metrics
+- **Piping & Redirection**: `command1 | command2`, `output > file.txt`
+- **Job Control**: Background processes, job management
+- **Environment Variables**: Full environment variable support
+- **Scripting**: WSH script execution with `.wsh` files
+- **Plugin System**: Extensible architecture for custom plugins
+- **Themes**: Multiple color themes and customizable UI
+- **Remote Features**: SSH integration, remote command execution
+- **Smart Completion**: Tab completion for commands and paths
+- **Debugging Tools**: Built-in debugging and profiling capabilities
+- **Performance Monitoring**: Real-time performance metrics
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -71,7 +71,7 @@ cargo install wsh
 # pacman -S wsh           # Arch Linux
 ```
 
-## 💻 Usage
+## Usage
 
 ### Interactive Mode
 
@@ -120,7 +120,7 @@ wsh --help
 | `Ctrl+D`           | Exit shell                  |
 | `Backspace/Delete` | Delete characters           |
 
-## ⚙️ Configuration
+## Configuration
 
 WSH uses TOML configuration files for customization.
 
@@ -174,7 +174,7 @@ max_history_memory = "10MB"
 cache_commands = true
 ```
 
-## 🏗️ Architecture
+##  Architecture
 
 WSH is built with a modular architecture for extensibility and maintainability:
 
@@ -246,47 +246,6 @@ cargo test test_name
 # Run with output
 cargo test -- --nocapture
 ```
-
-## 📊 Project Status
-
-### Current Version: 0.1.0-prototype
-
-**Completion Status:**
-
-- ✅ Basic shell functionality: **100%**
-- ✅ Configuration system: **100%**
-- ✅ Command parsing: **100%**
-- ✅ Interactive mode: **100%**
-- ✅ Built-in commands: **80%**
-- 🚧 External command execution: **60%**
-- 🚧 Error handling: **70%**
-- ❌ Advanced features: **0%**
-
-### Roadmap
-
-#### Version 0.2.0 (Next Release)
-
-- [ ] Enhanced built-in commands (`ls`, `cat`, `echo`)
-- [ ] Improved error handling and reporting
-- [ ] Basic environment variable support
-- [ ] Simple command completion
-- [ ] Unit tests coverage
-
-#### Version 0.3.0
-
-- [ ] Piping support (`cmd1 | cmd2`)
-- [ ] Output redirection (`cmd > file`)
-- [ ] Background job execution
-- [ ] Process management
-
-#### Version 1.0.0 (Stable)
-
-- [ ] Complete shell functionality
-- [ ] Scripting support
-- [ ] Plugin architecture
-- [ ] Performance optimizations
-- [ ] Comprehensive documentation
-
 ## 🤝 Contributing
 
 We welcome contributions! Since this is a prototype, there are many opportunities to help:
@@ -331,48 +290,3 @@ We welcome contributions! Since this is a prototype, there are many opportunitie
 ### Development Dependencies
 
 - [`env_logger`](https://crates.io/crates/env_logger) - Logging framework
-
-## 📈 Performance
-
-WSH is designed with performance in mind:
-
-- **Memory Safety**: Built with Rust's ownership system
-- **Zero-copy**: Minimal string allocations where possible
-- **Fast Startup**: Optimized initialization process
-- **Low Memory**: Efficient memory usage patterns
-
-_Benchmarks and detailed performance metrics will be added as the project matures._
-
-## 🔒 Security
-
-Security considerations for WSH:
-
-- **Memory Safety**: Rust prevents buffer overflows and memory leaks
-- **Input Validation**: All user input is properly validated
-- **Safe Execution**: External commands are executed safely
-- **Configuration**: Config files are validated before parsing
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Rust Community**: For the amazing ecosystem and tools
-- **Terminal Emulator Projects**: Inspiration from projects like Alacritty, Fish, and Zsh
-- **Contributors**: Everyone who helps improve WSH
-
-## 📞 Support & Contact
-
-- **Issues**: [GitHub Issues](https://github.com/Huseynteymurzade28/wsh/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Huseynteymurzade28/wsh/discussions)
-
----
-
-<div align="center">
-
-**⭐ Star this repo if you find WSH useful! ⭐**
-
-_Built with ❤️ and Rust_
-
-</div>
