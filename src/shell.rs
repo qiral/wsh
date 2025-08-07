@@ -482,7 +482,7 @@ impl Shell {
                 
                 // Show completion info if there are multiple options
                 if self.completions.len() > 1 {
-                    println!();
+                    execute!(stdout(), Print("\n"))?;
                     self.show_completion_info()?;
                     self.redraw_line()?;
                 }
