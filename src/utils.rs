@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::path::Path;
+use std::os::unix::fs::PermissionsExt;
 
 /// Utility functions for the shell
 pub struct Utils;
@@ -99,5 +100,15 @@ impl Utils {
         };
 
         config_prompt.replace("{cwd}", &display_dir)
+    }
+
+    /// Check if a file is executable
+    pub fn is_executable(path: &Path) -> bool {
+        if let Ok(metadata) = std::fs::metadata(path) {
+            let permissions = metadata.permissions();
+            permissions.mode() & 0o111 != 0
+        } else {
+            false
+        }
     }
 }

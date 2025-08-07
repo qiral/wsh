@@ -8,9 +8,10 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{self, ClearType},
 };
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashSet};
 use std::io::{Write, stdout};
 use std::process::{Command, Stdio};
+use std::path::Path;
 
 pub struct Shell {
     config: Config,
@@ -18,6 +19,11 @@ pub struct Shell {
     current_input: String,
     cursor_pos: usize,
     history_index: Option<usize>,
+    completions: Vec<String>,
+    completion_index: Option<usize>,
+    completion_prefix: String,
+    original_input_before_completion: String,
+    completion_start_pos: usize,
 }
 
 impl Shell {
@@ -28,6 +34,11 @@ impl Shell {
             current_input: String::new(),
             cursor_pos: 0,
             history_index: None,
+            completions: Vec::new(),
+            completion_index: None,
+            completion_prefix: String::new(),
+            original_input_before_completion: String::new(),
+            completion_start_pos: 0,
         })
     }
 
@@ -194,6 +205,7 @@ impl Shell {
                         return Ok(InputResult::Command(command));
                     }
                     (KeyCode::Backspace, _) => {
+                        self.reset_completion();
                         if self.cursor_pos > 0 {
                             self.current_input.remove(self.cursor_pos - 1);
                             self.cursor_pos -= 1;
@@ -201,6 +213,7 @@ impl Shell {
                         }
                     }
                     (KeyCode::Delete, _) => {
+                        self.reset_completion();
                         if self.cursor_pos < self.current_input.len() {
                             self.current_input.remove(self.cursor_pos);
                             self.redraw_line()?;
@@ -233,7 +246,11 @@ impl Shell {
                         execute!(stdout(), cursor::MoveRight(move_right as u16))?;
                         self.cursor_pos = self.current_input.len();
                     }
+                    (KeyCode::Tab, _) => {
+                        self.handle_tab_completion()?;
+                    }
                     (KeyCode::Char(c), _) => {
+                        self.reset_completion();
                         self.current_input.insert(self.cursor_pos, c);
                         self.cursor_pos += 1;
                         self.redraw_line()?;
@@ -288,6 +305,229 @@ impl Shell {
         self.current_input.clear();
         self.cursor_pos = 0;
         self.history_index = None;
+        self.reset_completion();
+    }
+
+    fn reset_completion(&mut self) {
+        self.completions.clear();
+        self.completion_index = None;
+        self.completion_prefix.clear();
+        self.original_input_before_completion.clear();
+        self.completion_start_pos = 0;
+    }
+
+    fn handle_tab_completion(&mut self) -> Result<()> {
+        if self.completions.is_empty() {
+            // First tab - generate completions and save original state
+            self.original_input_before_completion = self.current_input.clone();
+            self.generate_completions();
+            if self.completions.is_empty() {
+                return Ok(());
+            }
+            
+            // Calculate where the completion should start
+            let prefix_len = self.completion_prefix.len();
+            self.completion_start_pos = self.cursor_pos.saturating_sub(prefix_len);
+            
+            self.completion_index = Some(0);
+            self.apply_completion()?;
+        } else {
+            // Subsequent tabs - cycle through completions
+            if let Some(current_index) = self.completion_index {
+                let next_index = (current_index + 1) % self.completions.len();
+                self.completion_index = Some(next_index);
+                self.apply_completion()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn generate_completions(&mut self) {
+        let input_before_cursor = &self.current_input[..self.cursor_pos];
+        let tokens = Utils::parse_command(input_before_cursor);
+        
+        if tokens.is_empty() || (tokens.len() == 1 && !input_before_cursor.ends_with(' ')) {
+            // Complete command name
+            let prefix = tokens.first().map(|s| s.as_str()).unwrap_or("");
+            self.completion_prefix = prefix.to_string();
+            self.completions = self.get_command_completions(prefix);
+        } else {
+            // Complete file/directory path
+            let last_token = if input_before_cursor.ends_with(' ') {
+                ""  // If input ends with space, we're starting a new argument
+            } else {
+                tokens.last().map(|s| s.as_str()).unwrap_or("")
+            };
+            self.completion_prefix = last_token.to_string();
+            self.completions = self.get_path_completions(last_token);
+        }
+    }
+
+    fn get_command_completions(&self, prefix: &str) -> Vec<String> {
+        let mut completions = Vec::new();
+
+        // Built-in commands
+        let builtins = ["cd", "pwd", "exit", "help", "alias", "history"];
+        for builtin in &builtins {
+            if builtin.starts_with(prefix) {
+                completions.push(builtin.to_string());
+            }
+        }
+
+        // Aliases
+        for alias in self.config.aliases.keys() {
+            if alias.starts_with(prefix) {
+                completions.push(alias.clone());
+            }
+        }
+
+        // Commands in PATH
+        if let Ok(path_var) = std::env::var("PATH") {
+            let mut seen = HashSet::new();
+            for path_dir in path_var.split(':') {
+                if let Ok(entries) = std::fs::read_dir(path_dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(file_type) = entry.file_type() {
+                            if file_type.is_file() {
+                                if let Some(name) = entry.file_name().to_str() {
+                                    if name.starts_with(prefix) && !seen.contains(name) {
+                                        // Check if file is executable
+                                        if Utils::is_executable(&entry.path()) {
+                                            completions.push(name.to_string());
+                                            seen.insert(name.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // History-based completions
+        for cmd in &self.history {
+            let cmd_tokens = Utils::parse_command(cmd);
+            if let Some(first_token) = cmd_tokens.first() {
+                if first_token.starts_with(prefix) && !completions.contains(first_token) {
+                    completions.push(first_token.clone());
+                }
+            }
+        }
+
+        completions.sort();
+        completions.dedup();
+        completions
+    }
+
+    fn get_path_completions(&self, prefix: &str) -> Vec<String> {
+        let mut completions = Vec::new();
+        let expanded_prefix = Utils::expand_path(prefix);
+        
+        let (dir_path, file_prefix) = if expanded_prefix.ends_with('/') {
+            (expanded_prefix.as_str(), "")
+        } else {
+            let path = Path::new(&expanded_prefix);
+            if let Some(parent) = path.parent() {
+                let parent_str = parent.to_str().unwrap_or(".");
+                // If parent is empty string, use current directory
+                let dir_path = if parent_str.is_empty() { "." } else { parent_str };
+                (dir_path, 
+                 path.file_name().and_then(|n| n.to_str()).unwrap_or(""))
+            } else {
+                (".", expanded_prefix.as_str())
+            }
+        };
+
+        if let Ok(entries) = std::fs::read_dir(dir_path) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    // Show hidden files only if prefix starts with dot
+                    if name.starts_with(file_prefix) && (!name.starts_with('.') || file_prefix.starts_with('.')) {
+                        let mut completion = if dir_path == "." {
+                            name.to_string()
+                        } else if dir_path.ends_with('/') {
+                            format!("{}{}", dir_path, name)
+                        } else {
+                            format!("{}/{}", dir_path, name)
+                        };
+                        
+                        // Add trailing slash for directories
+                        if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                            completion.push('/');
+                        }
+                        
+                        completions.push(completion);
+                    }
+                }
+            }
+        }
+
+        completions.sort();
+        completions
+    }
+
+    fn apply_completion(&mut self) -> Result<()> {
+        if let Some(index) = self.completion_index {
+            if let Some(completion) = self.completions.get(index) {
+                // Restore original input and apply the selected completion
+                self.current_input = self.original_input_before_completion.clone();
+                
+                // Replace the prefix with the completion
+                let end_pos = self.completion_start_pos + self.completion_prefix.len();
+                self.current_input.replace_range(self.completion_start_pos..end_pos, completion);
+                self.cursor_pos = self.completion_start_pos + completion.len();
+                
+                self.redraw_line()?;
+                
+                // Show completion info if there are multiple options
+                if self.completions.len() > 1 {
+                    println!();
+                    self.show_completion_info()?;
+                    self.redraw_line()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn show_completion_info(&self) -> Result<()> {
+        if self.completions.len() <= 1 {
+            return Ok(());
+        }
+
+        println!("\nCompletions ({}/{}):", 
+                self.completion_index.map(|i| i + 1).unwrap_or(0), 
+                self.completions.len());
+        
+        let max_display = 10;
+        let start_idx = if self.completions.len() <= max_display {
+            0
+        } else {
+            let current = self.completion_index.unwrap_or(0);
+            if current < max_display / 2 {
+                0
+            } else if current > self.completions.len() - max_display / 2 {
+                self.completions.len() - max_display
+            } else {
+                current - max_display / 2
+            }
+        };
+
+        for (i, completion) in self.completions.iter()
+            .enumerate()
+            .skip(start_idx)
+            .take(max_display) {
+            
+            let marker = if Some(i) == self.completion_index { ">" } else { " " };
+            println!("  {}{}", marker, completion);
+        }
+
+        if self.completions.len() > max_display {
+            println!("  ... ({} more)", self.completions.len() - max_display);
+        }
+
+        Ok(())
     }
 
     fn show_help(&self) {
@@ -303,6 +543,13 @@ impl Shell {
         println!("  Up/Down arrows  - Navigate history");
         println!("  Left/Right      - Move cursor");
         println!("  Home/End        - Jump to line start/end");
+        println!("  Tab             - Auto-complete commands and paths");
+        println!("\nAutocompletion features:");
+        println!("  - Built-in commands");
+        println!("  - Executable commands in PATH");
+        println!("  - File and directory paths");
+        println!("  - Command aliases");
+        println!("  - Commands from history");
     }
 
     fn show_history(&self) {
