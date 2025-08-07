@@ -1,6 +1,7 @@
 mod completion;
 mod config;
 mod shell;
+mod ui;
 mod utils;
 
 use anyhow::Result;

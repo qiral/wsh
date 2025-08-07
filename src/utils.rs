@@ -1,7 +1,7 @@
 use anyhow::Result;
-use std::path::Path;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 /// Utility functions for the shell
 pub struct Utils;
@@ -93,9 +93,14 @@ impl Utils {
         let current_dir = Self::get_current_dir().unwrap_or_else(|_| "unknown".to_string());
         let home = std::env::var("HOME").unwrap_or_default();
 
-        // Replace home directory with ~
+        // Replace home directory with ~ and keep the full path from home
         let display_dir = if current_dir.starts_with(&home) {
-            current_dir.replacen(&home, "~", 1)
+            let relative_path = current_dir.strip_prefix(&home).unwrap_or("");
+            if relative_path.is_empty() {
+                "~".to_string()
+            } else {
+                format!("~{}", relative_path)
+            }
         } else {
             current_dir
         };

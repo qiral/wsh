@@ -1,17 +1,18 @@
 use crate::config::Config;
+use crate::ui::UI;
 use crate::utils::Utils;
 use anyhow::{Result, anyhow};
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
-    style::{Color, Print, ResetColor, SetForegroundColor},
-    terminal::{self, ClearType},
+    style::Print,
+    terminal,
 };
-use std::collections::{VecDeque, HashSet};
-use std::io::{Write, stdout};
-use std::process::{Command, Stdio};
+use std::collections::{HashSet, VecDeque};
+use std::io::stdout;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 pub struct Shell {
     config: Config,
@@ -73,19 +74,18 @@ impl Shell {
     }
 
     pub fn run_interactive(&mut self) -> Result<()> {
-        execute!(stdout(), Print("Welcome to WSH - A modern shell written in Rust!\n"))?;
-        execute!(stdout(), Print("Type 'help' for available commands or 'exit' to quit.\n"))?;
+        UI::display_welcome()?;
 
         terminal::enable_raw_mode()?;
 
         loop {
-            self.display_prompt()?;
+            UI::display_prompt(&self.config, &self.current_input, self.cursor_pos)?;
 
             match self.read_input()? {
                 InputResult::Command(cmd) => {
-                    execute!(stdout(), Print("\n"))?; // New line after input
+                    UI::print_newline()?; // New line after input
                     if let Err(e) = self.execute_command(&cmd) {
-                        self.print_error(&format!("Error: {}", e))?;
+                        UI::print_error(&self.config, &format!("Error: {}", e))?;
                     }
                     self.reset_input();
                 }
@@ -94,7 +94,7 @@ impl Shell {
         }
 
         terminal::disable_raw_mode()?;
-        execute!(stdout(), Print("\nGoodbye!\n"))?;
+        UI::display_goodbye()?;
         Ok(())
     }
 
@@ -124,17 +124,20 @@ impl Shell {
             }
             "exit" => std::process::exit(0),
             "help" => {
-                self.show_help();
+                UI::show_help()?;
                 Ok(())
             }
             "history" => {
-                self.show_history();
+                UI::show_history(&self.history)?;
                 Ok(())
             }
             "alias" => {
                 if args.len() == 2 {
                     self.config.aliases.insert(args[0].clone(), args[1].clone());
-                    execute!(stdout(), Print(&format!("Alias '{}' -> '{}' added\n", args[0], args[1])))?;
+                    execute!(
+                        stdout(),
+                        Print(&format!("Alias '{}' -> '{}' added\n", args[0], args[1]))
+                    )?;
                 } else {
                     for (alias, command) in &self.config.aliases {
                         execute!(stdout(), Print(&format!("{} -> {}\n", alias, command)))?;
@@ -147,42 +150,24 @@ impl Shell {
     }
 
     fn execute_external(&self, command: &str, args: &[String]) -> Result<()> {
-        let output = Command::new(command)
-            .args(args)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output();
+        // Disable raw mode temporarily for external commands
+        terminal::disable_raw_mode()?;
 
-        match output {
-            Ok(_) => Ok(()),
+        let result = Command::new(command).args(args).status(); // Use .status() instead of .output()
+
+        // Re-enable raw mode
+        terminal::enable_raw_mode()?;
+
+        match result {
+            Ok(status) => {
+                if status.success() {
+                    Ok(())
+                } else {
+                    Err(anyhow!("Command '{}' exited with non-zero status", command))
+                }
+            }
             Err(e) => Err(anyhow!("Failed to execute '{}': {}", command, e)),
         }
-    }
-
-    fn display_prompt(&self) -> Result<()> {
-        let prompt = Utils::format_prompt(&self.config.prompt);
-
-        if self.config.enable_colors {
-            execute!(
-                stdout(),
-                SetForegroundColor(Color::Green),
-                Print(&prompt),
-                ResetColor,
-                Print(&self.current_input)
-            )?;
-        } else {
-            print!("{}{}", prompt, self.current_input);
-        }
-
-        // Position cursor
-        if self.cursor_pos < self.current_input.len() {
-            let remaining = self.current_input.len() - self.cursor_pos;
-            execute!(stdout(), cursor::MoveLeft(remaining as u16))?;
-        }
-
-        stdout().flush()?;
-        Ok(())
     }
 
     fn read_input(&mut self) -> Result<InputResult> {
@@ -209,14 +194,14 @@ impl Shell {
                         if self.cursor_pos > 0 {
                             self.current_input.remove(self.cursor_pos - 1);
                             self.cursor_pos -= 1;
-                            self.redraw_line()?;
+                            UI::redraw_line(&self.config, &self.current_input, self.cursor_pos)?;
                         }
                     }
                     (KeyCode::Delete, _) => {
                         self.reset_completion();
                         if self.cursor_pos < self.current_input.len() {
                             self.current_input.remove(self.cursor_pos);
-                            self.redraw_line()?;
+                            UI::redraw_line(&self.config, &self.current_input, self.cursor_pos)?;
                         }
                     }
                     (KeyCode::Left, _) => {
@@ -253,7 +238,7 @@ impl Shell {
                         self.reset_completion();
                         self.current_input.insert(self.cursor_pos, c);
                         self.cursor_pos += 1;
-                        self.redraw_line()?;
+                        UI::redraw_line(&self.config, &self.current_input, self.cursor_pos)?;
                     }
                     _ => {}
                 }
@@ -275,7 +260,7 @@ impl Shell {
                 self.history_index = None;
                 self.current_input.clear();
                 self.cursor_pos = 0;
-                self.redraw_line()?;
+                UI::redraw_line(&self.config, &self.current_input, self.cursor_pos)?;
                 return Ok(());
             }
             _ => return Ok(()),
@@ -285,19 +270,9 @@ impl Shell {
         if let Some(index) = new_index {
             self.current_input = self.history[index].clone();
             self.cursor_pos = self.current_input.len();
-            self.redraw_line()?;
+            UI::redraw_line(&self.config, &self.current_input, self.cursor_pos)?;
         }
 
-        Ok(())
-    }
-
-    fn redraw_line(&self) -> Result<()> {
-        execute!(
-            stdout(),
-            cursor::MoveToColumn(0),
-            terminal::Clear(ClearType::FromCursorDown)
-        )?;
-        self.display_prompt()?;
         Ok(())
     }
 
@@ -324,11 +299,11 @@ impl Shell {
             if self.completions.is_empty() {
                 return Ok(());
             }
-            
+
             // Calculate where the completion should start
             let prefix_len = self.completion_prefix.len();
             self.completion_start_pos = self.cursor_pos.saturating_sub(prefix_len);
-            
+
             self.completion_index = Some(0);
             self.apply_completion()?;
         } else {
@@ -345,7 +320,7 @@ impl Shell {
     fn generate_completions(&mut self) {
         let input_before_cursor = &self.current_input[..self.cursor_pos];
         let tokens = Utils::parse_command(input_before_cursor);
-        
+
         if tokens.is_empty() || (tokens.len() == 1 && !input_before_cursor.ends_with(' ')) {
             // Complete command name
             let prefix = tokens.first().map(|s| s.as_str()).unwrap_or("");
@@ -354,7 +329,7 @@ impl Shell {
         } else {
             // Complete file/directory path
             let last_token = if input_before_cursor.ends_with(' ') {
-                ""  // If input ends with space, we're starting a new argument
+                "" // If input ends with space, we're starting a new argument
             } else {
                 tokens.last().map(|s| s.as_str()).unwrap_or("")
             };
@@ -423,7 +398,7 @@ impl Shell {
     fn get_path_completions(&self, prefix: &str) -> Vec<String> {
         let mut completions = Vec::new();
         let expanded_prefix = Utils::expand_path(prefix);
-        
+
         let (dir_path, file_prefix) = if expanded_prefix.ends_with('/') {
             (expanded_prefix.as_str(), "")
         } else {
@@ -431,9 +406,15 @@ impl Shell {
             if let Some(parent) = path.parent() {
                 let parent_str = parent.to_str().unwrap_or(".");
                 // If parent is empty string, use current directory
-                let dir_path = if parent_str.is_empty() { "." } else { parent_str };
-                (dir_path, 
-                 path.file_name().and_then(|n| n.to_str()).unwrap_or(""))
+                let dir_path = if parent_str.is_empty() {
+                    "."
+                } else {
+                    parent_str
+                };
+                (
+                    dir_path,
+                    path.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+                )
             } else {
                 (".", expanded_prefix.as_str())
             }
@@ -443,7 +424,9 @@ impl Shell {
             for entry in entries.flatten() {
                 if let Some(name) = entry.file_name().to_str() {
                     // Show hidden files only if prefix starts with dot
-                    if name.starts_with(file_prefix) && (!name.starts_with('.') || file_prefix.starts_with('.')) {
+                    if name.starts_with(file_prefix)
+                        && (!name.starts_with('.') || file_prefix.starts_with('.'))
+                    {
                         let mut completion = if dir_path == "." {
                             name.to_string()
                         } else if dir_path.ends_with('/') {
@@ -451,12 +434,12 @@ impl Shell {
                         } else {
                             format!("{}/{}", dir_path, name)
                         };
-                        
+
                         // Add trailing slash for directories
                         if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
                             completion.push('/');
                         }
-                        
+
                         completions.push(completion);
                     }
                 }
@@ -472,108 +455,16 @@ impl Shell {
             if let Some(completion) = self.completions.get(index) {
                 // Restore original input and apply the selected completion
                 self.current_input = self.original_input_before_completion.clone();
-                
+
                 // Replace the prefix with the completion
                 let end_pos = self.completion_start_pos + self.completion_prefix.len();
-                self.current_input.replace_range(self.completion_start_pos..end_pos, completion);
+                self.current_input
+                    .replace_range(self.completion_start_pos..end_pos, completion);
                 self.cursor_pos = self.completion_start_pos + completion.len();
-                
-                self.redraw_line()?;
-                
-                // Show completion info if there are multiple options
-                if self.completions.len() > 1 {
-                    execute!(stdout(), Print("\n"))?;
-                    self.show_completion_info()?;
-                    self.redraw_line()?;
-                }
+
+                // Always redraw the line cleanly
+                UI::redraw_line(&self.config, &self.current_input, self.cursor_pos)?;
             }
-        }
-        Ok(())
-    }
-
-    fn show_completion_info(&self) -> Result<()> {
-        if self.completions.len() <= 1 {
-            return Ok(());
-        }
-
-        execute!(stdout(), Print(&format!("\nCompletions ({}/{}):\n", 
-                self.completion_index.map(|i| i + 1).unwrap_or(0), 
-                self.completions.len())))?;
-        
-        let max_display = 10;
-        let start_idx = if self.completions.len() <= max_display {
-            0
-        } else {
-            let current = self.completion_index.unwrap_or(0);
-            if current < max_display / 2 {
-                0
-            } else if current > self.completions.len() - max_display / 2 {
-                self.completions.len() - max_display
-            } else {
-                current - max_display / 2
-            }
-        };
-
-        for (i, completion) in self.completions.iter()
-            .enumerate()
-            .skip(start_idx)
-            .take(max_display) {
-            
-            let marker = if Some(i) == self.completion_index { ">" } else { " " };
-            execute!(stdout(), Print(&format!("  {}{}\n", marker, completion)))?;
-        }
-
-        if self.completions.len() > max_display {
-            execute!(stdout(), Print(&format!("  ... ({} more)\n", self.completions.len() - max_display)))?;
-        }
-
-        Ok(())
-    }
-
-    fn show_help(&self) {
-        execute!(stdout(), Print("WSH - Built-in Commands:\n")).unwrap();
-        execute!(stdout(), Print("  cd [path]     - Change directory\n")).unwrap();
-        execute!(stdout(), Print("  pwd           - Print working directory\n")).unwrap();
-        execute!(stdout(), Print("  history       - Show command history\n")).unwrap();
-        execute!(stdout(), Print("  alias [name] [cmd] - Create or show aliases\n")).unwrap();
-        execute!(stdout(), Print("  help          - Show this help message\n")).unwrap();
-        execute!(stdout(), Print("  exit          - Exit the shell\n")).unwrap();
-        execute!(stdout(), Print("\nKeyboard shortcuts:\n")).unwrap();
-        execute!(stdout(), Print("  Ctrl+C / Ctrl+D - Exit\n")).unwrap();
-        execute!(stdout(), Print("  Up/Down arrows  - Navigate history\n")).unwrap();
-        execute!(stdout(), Print("  Left/Right      - Move cursor\n")).unwrap();
-        execute!(stdout(), Print("  Home/End        - Jump to line start/end\n")).unwrap();
-        execute!(stdout(), Print("  Tab             - Auto-complete commands and paths\n")).unwrap();
-        execute!(stdout(), Print("\nAutocompletion features:\n")).unwrap();
-        execute!(stdout(), Print("  - Built-in commands\n")).unwrap();
-        execute!(stdout(), Print("  - Executable commands in PATH\n")).unwrap();
-        execute!(stdout(), Print("  - File and directory paths\n")).unwrap();
-        execute!(stdout(), Print("  - Command aliases\n")).unwrap();
-        execute!(stdout(), Print("  - Commands from history\n")).unwrap();
-    }
-
-    fn show_history(&self) {
-        if self.history.is_empty() {
-            execute!(stdout(), Print("No history available\n")).unwrap();
-            return;
-        }
-
-        for (i, cmd) in self.history.iter().enumerate() {
-            execute!(stdout(), Print(&format!("{:4}: {}\n", i + 1, cmd))).unwrap();
-        }
-    }
-
-    fn print_error(&self, message: &str) -> Result<()> {
-        if self.config.enable_colors {
-            execute!(
-                stdout(),
-                SetForegroundColor(Color::Red),
-                Print(message),
-                ResetColor,
-                Print("\n")
-            )?;
-        } else {
-            execute!(stdout(), Print(&format!("{}\n", message)))?;
         }
         Ok(())
     }

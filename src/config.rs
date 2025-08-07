@@ -13,7 +13,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            prompt: "wsh> ".to_string(),
+            prompt: "➜ {cwd} $ ".to_string(),
             history_size: 1000,
             enable_colors: true,
             aliases: std::collections::HashMap::new(),
