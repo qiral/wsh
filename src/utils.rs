@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::path::Path;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 /// Utility functions for the shell
@@ -103,6 +104,7 @@ impl Utils {
     }
 
     /// Check if a file is executable
+    #[cfg(unix)]
     pub fn is_executable(path: &Path) -> bool {
         if let Ok(metadata) = std::fs::metadata(path) {
             let permissions = metadata.permissions();
