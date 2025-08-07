@@ -73,8 +73,8 @@ impl Shell {
     }
 
     pub fn run_interactive(&mut self) -> Result<()> {
-        println!("Welcome to WSH - A modern shell written in Rust!");
-        println!("Type 'help' for available commands or 'exit' to quit.");
+        execute!(stdout(), Print("Welcome to WSH - A modern shell written in Rust!\n"))?;
+        execute!(stdout(), Print("Type 'help' for available commands or 'exit' to quit.\n"))?;
 
         terminal::enable_raw_mode()?;
 
@@ -83,19 +83,18 @@ impl Shell {
 
             match self.read_input()? {
                 InputResult::Command(cmd) => {
-                    println!(); // New line after input
+                    execute!(stdout(), Print("\n"))?; // New line after input
                     if let Err(e) = self.execute_command(&cmd) {
                         self.print_error(&format!("Error: {}", e))?;
                     }
                     self.reset_input();
                 }
                 InputResult::Exit => break,
-                InputResult::Continue => continue,
             }
         }
 
         terminal::disable_raw_mode()?;
-        println!("\nGoodbye!");
+        execute!(stdout(), Print("\nGoodbye!\n"))?;
         Ok(())
     }
 
@@ -119,7 +118,8 @@ impl Shell {
                 Ok(())
             }
             "pwd" => {
-                println!("{}", Utils::get_current_dir()?);
+                let current_dir = Utils::get_current_dir()?;
+                execute!(stdout(), Print(&format!("{}\n", current_dir)))?;
                 Ok(())
             }
             "exit" => std::process::exit(0),
@@ -134,10 +134,10 @@ impl Shell {
             "alias" => {
                 if args.len() == 2 {
                     self.config.aliases.insert(args[0].clone(), args[1].clone());
-                    println!("Alias '{}' -> '{}' added", args[0], args[1]);
+                    execute!(stdout(), Print(&format!("Alias '{}' -> '{}' added\n", args[0], args[1])))?;
                 } else {
                     for (alias, command) in &self.config.aliases {
-                        println!("{} -> {}", alias, command);
+                        execute!(stdout(), Print(&format!("{} -> {}\n", alias, command)))?;
                     }
                 }
                 Ok(())
@@ -482,7 +482,7 @@ impl Shell {
                 
                 // Show completion info if there are multiple options
                 if self.completions.len() > 1 {
-                    println!();
+                    execute!(stdout(), Print("\n"))?;
                     self.show_completion_info()?;
                     self.redraw_line()?;
                 }
@@ -496,9 +496,9 @@ impl Shell {
             return Ok(());
         }
 
-        println!("\nCompletions ({}/{}):", 
+        execute!(stdout(), Print(&format!("\nCompletions ({}/{}):\n", 
                 self.completion_index.map(|i| i + 1).unwrap_or(0), 
-                self.completions.len());
+                self.completions.len())))?;
         
         let max_display = 10;
         let start_idx = if self.completions.len() <= max_display {
@@ -520,46 +520,46 @@ impl Shell {
             .take(max_display) {
             
             let marker = if Some(i) == self.completion_index { ">" } else { " " };
-            println!("  {}{}", marker, completion);
+            execute!(stdout(), Print(&format!("  {}{}\n", marker, completion)))?;
         }
 
         if self.completions.len() > max_display {
-            println!("  ... ({} more)", self.completions.len() - max_display);
+            execute!(stdout(), Print(&format!("  ... ({} more)\n", self.completions.len() - max_display)))?;
         }
 
         Ok(())
     }
 
     fn show_help(&self) {
-        println!("WSH - Built-in Commands:");
-        println!("  cd [path]     - Change directory");
-        println!("  pwd           - Print working directory");
-        println!("  history       - Show command history");
-        println!("  alias [name] [cmd] - Create or show aliases");
-        println!("  help          - Show this help message");
-        println!("  exit          - Exit the shell");
-        println!("\nKeyboard shortcuts:");
-        println!("  Ctrl+C / Ctrl+D - Exit");
-        println!("  Up/Down arrows  - Navigate history");
-        println!("  Left/Right      - Move cursor");
-        println!("  Home/End        - Jump to line start/end");
-        println!("  Tab             - Auto-complete commands and paths");
-        println!("\nAutocompletion features:");
-        println!("  - Built-in commands");
-        println!("  - Executable commands in PATH");
-        println!("  - File and directory paths");
-        println!("  - Command aliases");
-        println!("  - Commands from history");
+        execute!(stdout(), Print("WSH - Built-in Commands:\n")).unwrap();
+        execute!(stdout(), Print("  cd [path]     - Change directory\n")).unwrap();
+        execute!(stdout(), Print("  pwd           - Print working directory\n")).unwrap();
+        execute!(stdout(), Print("  history       - Show command history\n")).unwrap();
+        execute!(stdout(), Print("  alias [name] [cmd] - Create or show aliases\n")).unwrap();
+        execute!(stdout(), Print("  help          - Show this help message\n")).unwrap();
+        execute!(stdout(), Print("  exit          - Exit the shell\n")).unwrap();
+        execute!(stdout(), Print("\nKeyboard shortcuts:\n")).unwrap();
+        execute!(stdout(), Print("  Ctrl+C / Ctrl+D - Exit\n")).unwrap();
+        execute!(stdout(), Print("  Up/Down arrows  - Navigate history\n")).unwrap();
+        execute!(stdout(), Print("  Left/Right      - Move cursor\n")).unwrap();
+        execute!(stdout(), Print("  Home/End        - Jump to line start/end\n")).unwrap();
+        execute!(stdout(), Print("  Tab             - Auto-complete commands and paths\n")).unwrap();
+        execute!(stdout(), Print("\nAutocompletion features:\n")).unwrap();
+        execute!(stdout(), Print("  - Built-in commands\n")).unwrap();
+        execute!(stdout(), Print("  - Executable commands in PATH\n")).unwrap();
+        execute!(stdout(), Print("  - File and directory paths\n")).unwrap();
+        execute!(stdout(), Print("  - Command aliases\n")).unwrap();
+        execute!(stdout(), Print("  - Commands from history\n")).unwrap();
     }
 
     fn show_history(&self) {
         if self.history.is_empty() {
-            println!("No history available");
+            execute!(stdout(), Print("No history available\n")).unwrap();
             return;
         }
 
         for (i, cmd) in self.history.iter().enumerate() {
-            println!("{:4}: {}", i + 1, cmd);
+            execute!(stdout(), Print(&format!("{:4}: {}\n", i + 1, cmd))).unwrap();
         }
     }
 
@@ -573,7 +573,7 @@ impl Shell {
                 Print("\n")
             )?;
         } else {
-            println!("{}", message);
+            execute!(stdout(), Print(&format!("{}\n", message)))?;
         }
         Ok(())
     }
@@ -582,5 +582,4 @@ impl Shell {
 enum InputResult {
     Command(String),
     Exit,
-   Continue,
 }
