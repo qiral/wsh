@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::path::Path;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 /// Utility functions for the shell
