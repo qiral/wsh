@@ -1,3 +1,4 @@
+mod completion;
 mod config;
 mod shell;
 mod utils;
