@@ -498,7 +498,14 @@ impl Shell {
 
         println!("\nCompletions ({}/{}):", 
                 self.completion_index.map(|i| i + 1).unwrap_or(0), 
-                self.completions.len());
+        execute!(
+            stdout(),
+            Print(format!(
+                "\nCompletions ({}/{}):",
+                self.completion_index.map(|i| i + 1).unwrap_or(0),
+                self.completions.len()
+            ))
+        )?;
         
         let max_display = 10;
         let start_idx = if self.completions.len() <= max_display {
