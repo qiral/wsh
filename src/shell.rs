@@ -1,3 +1,4 @@
+use crate::completion::Completion;
 use crate::config::Config;
 use crate::ui::UI;
 use crate::utils::Utils;
@@ -9,6 +10,8 @@ use crossterm::{
     style::Print,
     terminal,
 };
+
+=======
 use std::collections::{HashSet, VecDeque};
 use std::io::stdout;
 use std::path::Path;
@@ -20,11 +23,7 @@ pub struct Shell {
     current_input: String,
     cursor_pos: usize,
     history_index: Option<usize>,
-    completions: Vec<String>,
-    completion_index: Option<usize>,
-    completion_prefix: String,
-    original_input_before_completion: String,
-    completion_start_pos: usize,
+    completion: Completion,
 }
 
 impl Shell {
@@ -35,11 +34,7 @@ impl Shell {
             current_input: String::new(),
             cursor_pos: 0,
             history_index: None,
-            completions: Vec::new(),
-            completion_index: None,
-            completion_prefix: String::new(),
-            original_input_before_completion: String::new(),
-            completion_start_pos: 0,
+            completion: Completion::new(),
         })
     }
 
@@ -284,21 +279,26 @@ impl Shell {
     }
 
     fn reset_completion(&mut self) {
-        self.completions.clear();
-        self.completion_index = None;
-        self.completion_prefix.clear();
-        self.original_input_before_completion.clear();
-        self.completion_start_pos = 0;
+        self.completion.reset();
     }
 
     fn handle_tab_completion(&mut self) -> Result<()> {
-        if self.completions.is_empty() {
-            // First tab - generate completions and save original state
-            self.original_input_before_completion = self.current_input.clone();
-            self.generate_completions();
-            if self.completions.is_empty() {
+        if self.completion.is_empty() {
+            self.completion.generate(
+                &self.current_input,
+                self.cursor_pos,
+                &self.config,
+                &self.history,
+            );
+            if self.completion.is_empty() {
                 return Ok(());
             }
+
+            self.completion.start(&self.current_input, self.cursor_pos);
+            self.completion
+                .apply(&mut self.current_input, &mut self.cursor_pos)?;
+            UI::redraw_line(&self.config, &self.current_input, self.cursor_pos)?;
+
 
             // Calculate where the completion should start
             let prefix_len = self.completion_prefix.len();
@@ -306,16 +306,18 @@ impl Shell {
 
             self.completion_index = Some(0);
             self.apply_completion()?;
+          
         } else {
-            // Subsequent tabs - cycle through completions
-            if let Some(current_index) = self.completion_index {
-                let next_index = (current_index + 1) % self.completions.len();
-                self.completion_index = Some(next_index);
-                self.apply_completion()?;
-            }
+            self.completion.cycle_next();
+            self.completion
+                .apply(&mut self.current_input, &mut self.cursor_pos)?;
+            UI::redraw_line(&self.config, &self.current_input, self.cursor_pos)?;
         }
         Ok(())
     }
+
+
+    // completion-specific helper methods removed; logic now in Completion
 
     fn generate_completions(&mut self) {
         let input_before_cursor = &self.current_input[..self.cursor_pos];
@@ -468,6 +470,7 @@ impl Shell {
         }
         Ok(())
     }
+
 }
 
 enum InputResult {
