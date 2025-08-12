@@ -56,7 +56,11 @@ impl UI {
     pub fn redraw_line(config: &Config, current_input: &str, cursor_pos: usize) -> Result<()> {
         execute!(
             stdout(),
+
             Print("\r"), // Move to the start of the line
+
+            cursor::MoveToColumn(0),
+
             terminal::Clear(ClearType::FromCursorDown)
         )?;
         Self::display_prompt(config, current_input, cursor_pos)?;
@@ -64,17 +68,26 @@ impl UI {
     }
 
     pub fn print_error(config: &Config, message: &str) -> Result<()> {
+
         execute!(stdout(), Print("Error: "))?;
+
         if config.enable_colors {
             execute!(
                 stdout(),
                 SetForegroundColor(Color::Red),
                 Print(message),
                 ResetColor,
+
                 Print("\r\n")
             )?;
         } else {
             execute!(stdout(), Print(&format!("{}\r\n", message)))?;
+
+                Print("\n")
+            )?;
+        } else {
+            execute!(stdout(), Print(&format!("{}\n", message)))?;
+
         }
         Ok(())
     }
