@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::utils::Utils;
 use anyhow::Result;
 use crossterm::{execute, style::Print};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::io::stdout;
 use std::path::Path;
 
@@ -37,24 +37,32 @@ impl Completion {
         self.completions.is_empty()
     }
 
-    pub fn generate(&mut self, input: &str, cursor_pos: usize, config: &Config, history: &[String]) {
+    pub fn generate(
+        &mut self,
+        input: &str,
+        cursor_pos: usize,
+        config: &Config,
+        history: &VecDeque<String>,
+    ) {
         let input_before_cursor = &input[..cursor_pos];
         let tokens = Utils::parse_command(input_before_cursor);
-        
+        let first_token = tokens.first().map(|s| s.as_str()).unwrap_or("");
+
         if tokens.is_empty() || (tokens.len() == 1 && !input_before_cursor.ends_with(' ')) {
-            // Complete command name
-            let prefix = tokens.first().map(|s| s.as_str()).unwrap_or("");
+            // Command name completion
+            let prefix = first_token;
             self.completion_prefix = prefix.to_string();
             self.completions = self.get_command_completions(prefix, config, history);
         } else {
-            // Complete file/directory path
+            // Argument (path) completion
+            let directories_only = first_token == "cd"; // only dirs for cd
             let last_token = if input_before_cursor.ends_with(' ') {
-                ""  // If input ends with space, we're starting a new argument
+                ""
             } else {
                 tokens.last().map(|s| s.as_str()).unwrap_or("")
             };
             self.completion_prefix = last_token.to_string();
-            self.completions = self.get_path_completions(last_token);
+            self.completions = self.get_path_completions(last_token, directories_only);
         }
     }
 
@@ -63,7 +71,7 @@ impl Completion {
             if let Some(completion) = self.completions.get(index) {
                 // Restore original input and apply the selected completion
                 *input = self.original_input_before_completion.clone();
-                
+
                 // Replace the prefix with the completion
                 let end_pos = self.completion_start_pos + self.completion_prefix.len();
                 input.replace_range(self.completion_start_pos..end_pos, completion);
@@ -104,7 +112,7 @@ impl Completion {
                 self.completions.len()
             ))
         )?;
-        
+
         let max_display = 10;
         let start_idx = if self.completions.len() <= max_display {
             0
@@ -119,23 +127,40 @@ impl Completion {
             }
         };
 
-        for (i, completion) in self.completions.iter()
+        for (i, completion) in self
+            .completions
+            .iter()
             .enumerate()
             .skip(start_idx)
-            .take(max_display) {
-            
-            let marker = if Some(i) == self.completion_index { ">" } else { " " };
+            .take(max_display)
+        {
+            let marker = if Some(i) == self.completion_index {
+                ">"
+            } else {
+                " "
+            };
             execute!(stdout(), Print(format!("  {}{}\n", marker, completion)))?;
         }
 
         if self.completions.len() > max_display {
-            execute!(stdout(), Print(format!("  ... ({} more)\n", self.completions.len() - max_display)))?;
+            execute!(
+                stdout(),
+                Print(format!(
+                    "  ... ({} more)\n",
+                    self.completions.len() - max_display
+                ))
+            )?;
         }
 
         Ok(())
     }
 
-    fn get_command_completions(&self, prefix: &str, config: &Config, history: &[String]) -> Vec<String> {
+    fn get_command_completions(
+        &self,
+        prefix: &str,
+        config: &Config,
+        history: &VecDeque<String>,
+    ) -> Vec<String> {
         let mut completions = Vec::new();
 
         // Built-in commands
@@ -192,10 +217,10 @@ impl Completion {
         completions
     }
 
-    fn get_path_completions(&self, prefix: &str) -> Vec<String> {
+    fn get_path_completions(&self, prefix: &str, directories_only: bool) -> Vec<String> {
         let mut completions = Vec::new();
         let expanded_prefix = Utils::expand_path(prefix);
-        
+
         let (dir_path, file_prefix) = if expanded_prefix.ends_with('/') {
             (expanded_prefix.as_str(), "")
         } else {
@@ -203,9 +228,15 @@ impl Completion {
             if let Some(parent) = path.parent() {
                 let parent_str = parent.to_str().unwrap_or(".");
                 // If parent is empty string, use current directory
-                let dir_path = if parent_str.is_empty() { "." } else { parent_str };
-                (dir_path, 
-                 path.file_name().and_then(|n| n.to_str()).unwrap_or(""))
+                let dir_path = if parent_str.is_empty() {
+                    "."
+                } else {
+                    parent_str
+                };
+                (
+                    dir_path,
+                    path.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+                )
             } else {
                 (".", expanded_prefix.as_str())
             }
@@ -214,8 +245,14 @@ impl Completion {
         if let Ok(entries) = std::fs::read_dir(dir_path) {
             for entry in entries.flatten() {
                 if let Some(name) = entry.file_name().to_str() {
+                    let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                    if directories_only && !is_dir {
+                        continue;
+                    }
                     // Show hidden files only if prefix starts with dot
-                    if name.starts_with(file_prefix) && (!name.starts_with('.') || file_prefix.starts_with('.')) {
+                    if name.starts_with(file_prefix)
+                        && (!name.starts_with('.') || file_prefix.starts_with('.'))
+                    {
                         let mut completion = if dir_path == "." {
                             name.to_string()
                         } else if dir_path.ends_with('/') {
@@ -223,12 +260,12 @@ impl Completion {
                         } else {
                             format!("{}/{}", dir_path, name)
                         };
-                        
+
                         // Add trailing slash for directories
-                        if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                        if is_dir {
                             completion.push('/');
                         }
-                        
+
                         completions.push(completion);
                     }
                 }
